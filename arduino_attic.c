@@ -40,9 +40,12 @@ void setup() {
 	pinMode(SOLAR_IN, INPUT);
 	pinMode(SOLAR_OUT, OUTPUT);
 	pinMode(HOUSE_OUT, OUTPUT);
-	analogWrite(HOUSE_OUT, LOW);
-	analogWrite(SOLAR_OUT, LOW);
-	Solar_Status = House_Status = 0;
+	digitalWrite(HOUSE_OUT, LOW);
+	digitalWrite(SOLAR_OUT, LOW);
+	Solar_Status = 1;
+	House_Status = 0;
+	delay(5);
+	digitalWrite(SOLAR_OUT, HIGH);
 	Serial.begin(9600);
 	
 	setInterrupt();
