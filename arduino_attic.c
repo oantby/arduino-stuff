@@ -47,7 +47,7 @@ int readTemp() {
 	
 	delay(1); // let everything sync up.
 	
-	uint32_t adc_reading = 0x02ff & ADC0_RES;
+	uint32_t adc_reading = 0x03ff & ADC0_RES;
 	
 	// adjust for variance in devices (hardcoded into sigrow)
 	adc_reading -= SIGROW_TEMPSENSE1;
