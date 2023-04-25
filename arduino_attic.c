@@ -9,7 +9,7 @@
 // both power sources disabled if under
 #define TOO_COLD 15
 
-uint_fast8_t SOLAR_STATUS, HOUSE_STATUS;
+uint_fast8_t Solar_Status, House_Status;
 
 void setup() {
 	// set reference voltage - required for tempsense,
