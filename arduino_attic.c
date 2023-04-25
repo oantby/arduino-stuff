@@ -24,6 +24,9 @@ int readTemp() {
 	// quoting our way through the ATMega4809 datasheet
 	// reference voltage set in setup() because we always use 1v1.
 	
+	// todo: figure out if CLK_MAIN on this model is 20MHz by default, in
+	// which case I need to up the prescaler value.
+	
 	// select internal voltage reference by writing 0x0 to REFSEL in CTRLC
 	ADC0_CTRLC &= (~ADC_REFSEL_gm);
 	// select ADC temp sensor channel by configuring MUXPOS
@@ -39,9 +42,12 @@ int readTemp() {
 	// start a conversion to get the temperature
 	ADC0_CTRLA |= 1 << ADC_ENABLE_bp;
 	
+	// this could really just be ADC0_COMMAND |= 1, but this is more portable, probably.
+	ADC0_COMMAND = (~ADC_STCONV_bm & ADC0_COMMAND) | (1 << ADC_STCONV_bp);
+	
 	delay(1); // let everything sync up.
 	
-	uint32_t adc_reading = 0x02ff & ((ADC0_RESH << 8) | ADC0_RESL);
+	uint32_t adc_reading = 0x02ff & ADC0_RES;
 	
 	// adjust for variance in devices (hardcoded into sigrow)
 	adc_reading -= SIGROW_TEMPSENSE1;
