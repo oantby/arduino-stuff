@@ -1,3 +1,4 @@
+#include <avr/sleep.h>
 
 #define SOLAR_IN A6
 #define SOLAR_OUT 7
@@ -9,7 +10,28 @@
 // both power sources disabled if under
 #define TOO_COLD 15
 
+// minimum reading back from solar pin to indicate it supplies enough power.
+#define SOLAR_THRESHOLD 12 /* todo */
+
 uint_fast8_t Solar_Status, House_Status;
+
+
+
+void setInterrupt() {
+	// wait for startup to be done with PIT
+	while (RTC_PITSTATUS & RTC_CTRLBUSY_bm) {}
+	
+	RTC_CLKSEL = RTC_CLKSEL_INT1K_gc;
+	
+	RTC_PITINTCTRL = (~RTC_PI_bm & RTC_PITINTCTRL) | (1 << RTC_PI_bp);
+	
+	RTC_PITCTRLA = (~RTC_PITEN_bm & RTC_PITCTRLA) | (1 << RTC_PITEN_bp) | RTC_PERIOD_CYC8192_gc;
+}
+
+ISR(RTC_PIT_vect) {
+	// clear interrupt flag.
+	RTC_PITINTFLAGS = RTC_PI_bm;
+}
 
 void setup() {
 	// set reference voltage - required for tempsense,
@@ -18,6 +40,14 @@ void setup() {
 	pinMode(SOLAR_IN, INPUT);
 	pinMode(SOLAR_OUT, OUTPUT);
 	pinMode(HOUSE_OUT, OUTPUT);
+	analogWrite(HOUSE_OUT, LOW);
+	analogWrite(SOLAR_OUT, LOW);
+	Solar_Status = House_Status = 0;
+	Serial.begin(9600);
+	
+	setInterrupt();
+	set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+	sleep_enable();
 }
 
 int readTemp() {
@@ -63,5 +93,100 @@ int readTemp() {
 }
 
 void loop() {
+	int temp = readTemp();
 	
+	if (temp >= TOO_HOT) {
+		// check if solar is providing enough voltage,
+		// and enable house power if it's not.
+		int solar_power = analogRead(SOLAR_IN);
+		if (solar_power < SOLAR_THRESHOLD) {
+			// we need house power. but, to make sure it's not just
+			// a cloud or something, we'll make a couple attempts.
+			
+			if (Solar_Status & 0x8000) {
+				// swap to solar was in progress. mark it as too inconsistent.
+				Solar_Status = 0;
+			}
+			
+			if (House_Status & 0x8000) {
+				// we've already established on a previous loop the need to
+				// switch to house power. if we've agreed 3 times, make the swap.
+				if (House_Status & 0x03 == 3) {
+					House_Status = 1;
+					
+					Serial.println("Disabling solar, enabling house");
+					
+					Solar_Status = 0;
+					digitalWrite(SOLAR_OUT, LOW);
+					delay(5); // give plenty of time for switch-off.
+					digitalWrite(HOUSE_OUT, HIGH);
+				} else {
+					++House_Status;
+				}
+			} else if (House_Status == 1) {
+				// house is already supplying power.
+			} else {
+				// house has not considered supplying power yet.
+				House_Status = 0x8001;
+			}
+		} else if (House_Status) {
+			// solar is giving plenty.
+			// ensure it's enabled and house is disabled, if solar has proven
+			// consistent.
+			
+			if (House_Status & 0x8000) {
+				// were considering swapping to house power, but we're
+				// still good over here.
+				House_Status = 0;
+			}
+			
+			if (Solar_Status & 0x8000) {
+				if (Solar_Status & 0x03 == 3) {
+					
+					Serial.println("Disabling house, enabling solar");
+					
+					Solar_Status = 1;
+					House_Status = 0;
+					digitalWrite(HOUSE_OUT, LOW);
+					delay(5);
+					digitalWrite(SOLAR_OUT, HIGH);
+				} else {
+					++Solar_Status;
+				}
+			} else if (Solar_Status == 1) {
+				// solar is already power supply.
+			} else {
+				// solar hasn't considered supplying.
+				Solar_Status = 0x8001;
+			}
+		}
+		
+	} else if (temp <= TOO_COLD) {
+		// turn off everything.
+		if (Solar_Status || House_Status) {
+			Serial.println("Disabling all power");
+			digitalWrite(SOLAR_OUT, LOW);
+			digitalWrite(HOUSE_OUT, LOW);
+			Solar_Status = House_Status = 0;
+		}
+	} else {
+		// house power off, let solar power do whatever it wants.
+		if (House_Status == 1) {
+			// house power was on. need to turn it off.
+			Serial.println("Disabling house");
+			digitalWrite(HOUSE_OUT, LOW);
+		}
+		if (House_Status) House_Status = 0;
+		
+		if (Solar_Status != 1) {
+			Solar_Status = 1;
+			delay(5); // make sure house power is cut.
+			Serial.println("Enabling solar");
+			digitalWrite(SOLAR_OUT, HIGH);
+		}
+	}
+	
+	// put to sleep, to be woken up by PIT
+	Serial.println("Going to sleep");
+	sleep_cpu();
 }
