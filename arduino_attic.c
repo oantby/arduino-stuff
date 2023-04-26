@@ -37,7 +37,7 @@ void setup() {
 	analogReference(INTERNAL1V1);
 	
 	// revert ADC prescaler to board default (from arduino default)
-	// ADC0_CTRLC = (~ADC_PRESC_gm & ADC0_CTRLC) | ADC_PRESC_DIV16_gc;
+	ADC0_CTRLC = (~ADC_PRESC_gm & ADC0_CTRLC) | ADC_PRESC_DIV16_gc;
 	
 	pinMode(SOLAR_IN, INPUT);
 	pinMode(SOLAR_OUT, OUTPUT);
