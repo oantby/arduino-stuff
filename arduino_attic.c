@@ -15,8 +15,6 @@
 
 uint_fast8_t Solar_Status, House_Status;
 
-
-
 void setInterrupt() {
 	// wait for startup to be done with PIT
 	while (RTC_PITSTATUS & RTC_CTRLBUSY_bm) {}
@@ -106,12 +104,12 @@ void loop() {
 			// we need house power. but, to make sure it's not just
 			// a cloud or something, we'll make a couple attempts.
 			
-			if (Solar_Status & 0x8000) {
+			if (Solar_Status & 0x80) {
 				// swap to solar was in progress. mark it as too inconsistent.
 				Solar_Status = 0;
 			}
 			
-			if (House_Status & 0x8000) {
+			if (House_Status & 0x80) {
 				// we've already established on a previous loop the need to
 				// switch to house power. if we've agreed 3 times, make the swap.
 				if (House_Status & 0x03 == 3) {
@@ -130,20 +128,20 @@ void loop() {
 				// house is already supplying power.
 			} else {
 				// house has not considered supplying power yet.
-				House_Status = 0x8001;
+				House_Status = 0x81;
 			}
 		} else if (House_Status) {
 			// solar is giving plenty.
 			// ensure it's enabled and house is disabled, if solar has proven
 			// consistent.
 			
-			if (House_Status & 0x8000) {
+			if (House_Status & 0x80) {
 				// were considering swapping to house power, but we're
 				// still good over here.
 				House_Status = 0;
 			}
 			
-			if (Solar_Status & 0x8000) {
+			if (Solar_Status & 0x80) {
 				if (Solar_Status & 0x03 == 3) {
 					
 					Serial.println("Disabling house, enabling solar");
@@ -160,7 +158,7 @@ void loop() {
 				// solar is already power supply.
 			} else {
 				// solar hasn't considered supplying.
-				Solar_Status = 0x8001;
+				Solar_Status = 0x81;
 			}
 		}
 		
