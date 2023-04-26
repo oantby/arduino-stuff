@@ -35,6 +35,10 @@ void setup() {
 	// set reference voltage - required for tempsense,
 	// increases precision for SOLAR_IN readings.
 	analogReference(INTERNAL1V1);
+	
+	// revert ADC prescaler to board default (from arduino default)
+	ADC0_CTRLC = (~ADC_PRESC_gm & ADC0_CTRLC) | ADC_PRESC_DIV2_gc;
+	
 	pinMode(SOLAR_IN, INPUT);
 	pinMode(SOLAR_OUT, OUTPUT);
 	pinMode(HOUSE_OUT, OUTPUT);
