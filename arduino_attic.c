@@ -51,20 +51,13 @@ void setup() {
 	
 	setInterrupt();
 	
-	// keep main clock going in standby
-	// CLKCTRL_OSC20MCTRLA = (~CLKCTRL_RUNSTDBY_bm & CLKCTRL_OSC20MCTRLA) | (1 << CLKCTRL_RUNSTDBY_bp);
-	
-	set_sleep_mode(/* SLEEP_MODE_STANDBY */ SLEEP_MODE_PWR_DOWN);
+	set_sleep_mode(SLEEP_MODE_PWR_DOWN);
 	sleep_enable();
 }
 
 int readTemp() {
 	// quoting our way through the ATMega4809 datasheet
 	// reference voltage set in setup() because we always use 1v1.
-	
-	// todo: figure out if CLK_MAIN on this model is 20MHz by default, in
-	// which case I need to up the prescaler value.
-	
 	
 	ADC0_CTRLA &= ~ADC_FREERUN_bm;
 	
