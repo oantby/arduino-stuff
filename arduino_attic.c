@@ -6,12 +6,12 @@
 
 // celsius
 // supplementary power enabled (when appropriate) if over
-#define TOO_HOT 30
+#define TOO_HOT 43
 // both power sources disabled if under
-#define TOO_COLD 15
+#define TOO_COLD 20
 
 // minimum reading back from solar pin to indicate it supplies enough power.
-#define SOLAR_THRESHOLD 12 /* todo */
+#define SOLAR_THRESHOLD 809
 
 uint_fast8_t Solar_Status, House_Status;
 
@@ -37,7 +37,7 @@ void setup() {
 	analogReference(INTERNAL1V1);
 	
 	// revert ADC prescaler to board default (from arduino default)
-	ADC0_CTRLC = (~ADC_PRESC_gm & ADC0_CTRLC) | ADC_PRESC_DIV16_gc;
+	// ADC0_CTRLC = (~ADC_PRESC_gm & ADC0_CTRLC) | ADC_PRESC_DIV16_gc;
 	
 	pinMode(SOLAR_IN, INPUT);
 	pinMode(SOLAR_OUT, OUTPUT);
@@ -48,10 +48,13 @@ void setup() {
 	House_Status = 0;
 	delay(5);
 	digitalWrite(SOLAR_OUT, HIGH);
-	Serial.begin(9600);
 	
 	setInterrupt();
-	set_sleep_mode(SLEEP_MODE_PWR_DOWN);
+	
+	// keep main clock going in standby
+	// CLKCTRL_OSC20MCTRLA = (~CLKCTRL_RUNSTDBY_bm & CLKCTRL_OSC20MCTRLA) | (1 << CLKCTRL_RUNSTDBY_bp);
+	
+	set_sleep_mode(/* SLEEP_MODE_STANDBY */ SLEEP_MODE_PWR_DOWN);
 	sleep_enable();
 }
 
@@ -62,6 +65,10 @@ int readTemp() {
 	// todo: figure out if CLK_MAIN on this model is 20MHz by default, in
 	// which case I need to up the prescaler value.
 	
+	
+	ADC0_CTRLA &= ~ADC_FREERUN_bm;
+	
+	ADC0_CTRLB = (~ADC_SAMPNUM_gm & ADC0_CTRLB) | (ADC_SAMPNUM_ACC1_gc << ADC_SAMPNUM_gp);
 	// select internal voltage reference by writing 0x0 to REFSEL in CTRLC
 	ADC0_CTRLC &= (~ADC_REFSEL_gm);
 	// select ADC temp sensor channel by configuring MUXPOS
@@ -77,46 +84,37 @@ int readTemp() {
 	// start a conversion to get the temperature
 	ADC0_CTRLA |= 1 << ADC_ENABLE_bp;
 	
-	ADC0_CTRLA &= ~ADC_FREERUN_bm;
-	
-	ADC0_CTRLB = (~ADC_SAMPNUM_gm & ADC0_CTRLB) | (ADC_SAMPNUM_ACC1_gc << ADC_SAMPNUM_gp);
-	
 	// this could really just be ADC0_COMMAND |= 1, but this is more portable, probably.
 	ADC0_COMMAND = (~ADC_STCONV_bm & ADC0_COMMAND) | (1 << ADC_STCONV_bp);
-	int t = (ADC0_COMMAND & ADC_STCONV_bm);
 	
-	Serial.println(t);
+	while (ADC0_COMMAND & ADC_STCONV_bm) {}
 	
-	delay(1); // let everything sync up.
+	int32_t adc_reading = 0x03ff & ADC0_RES;
 	
-	t = (ADC0_COMMAND & ADC_STCONV_bm);
-	Serial.println(t);
-	
-	uint32_t adc_reading = 0x03ff & ((ADC0_RESH << 8) | ADC0_RESL);
-	
-	Serial.println(adc_reading);
 	
 	// adjust for variance in devices (hardcoded into sigrow)
-	adc_reading -= SIGROW_TEMPSENSE1;
+	adc_reading -= (int8_t)SIGROW_TEMPSENSE1;
 	adc_reading *= SIGROW_TEMPSENSE0;
 	
-	Serial.print("adc value: ");
-	Serial.println(adc_reading);
 	
 	// now holding 256 * temperature in kelvin.
-	adc_reading -= (273.15 * (1 << 8));
-	// now holding 256 * temperature in celsius.
-	adc_reading += 0x80; // to ensure correct rounding.
 	adc_reading >>= 8;
+	
+	adc_reading -= 273;
 	// now in integer degrees celsius.
 	return adc_reading;
 }
 
 void loop() {
-	Serial.println("Read temperature");
 	int temp = readTemp();
-	Serial.println(temp);
-	Serial.println(temp > TOO_HOT);
+	
+	int i = 0;
+	for (; i < (int)(temp - 25); i++) {
+		digitalWrite(13, HIGH);
+		delay(500);
+		digitalWrite(13, LOW);
+		delay(250);
+	}
 	
 	if (temp >= TOO_HOT) {
 		// check if solar is providing enough voltage,
@@ -136,8 +134,6 @@ void loop() {
 				// switch to house power. if we've agreed 3 times, make the swap.
 				if (House_Status & 0x03 == 3) {
 					House_Status = 1;
-					
-					Serial.println("Disabling solar, enabling house");
 					
 					Solar_Status = 0;
 					digitalWrite(SOLAR_OUT, LOW);
@@ -166,8 +162,6 @@ void loop() {
 			if (Solar_Status & 0x80) {
 				if (Solar_Status & 0x03 == 3) {
 					
-					Serial.println("Disabling house, enabling solar");
-					
 					Solar_Status = 1;
 					House_Status = 0;
 					digitalWrite(HOUSE_OUT, LOW);
@@ -187,7 +181,6 @@ void loop() {
 	} else if (temp <= TOO_COLD) {
 		// turn off everything.
 		if (Solar_Status || House_Status) {
-			Serial.println("Disabling all power");
 			digitalWrite(SOLAR_OUT, LOW);
 			digitalWrite(HOUSE_OUT, LOW);
 			Solar_Status = House_Status = 0;
@@ -196,7 +189,6 @@ void loop() {
 		// house power off, let solar power do whatever it wants.
 		if (House_Status == 1) {
 			// house power was on. need to turn it off.
-			Serial.println("Disabling house");
 			digitalWrite(HOUSE_OUT, LOW);
 		}
 		if (House_Status) House_Status = 0;
@@ -204,13 +196,10 @@ void loop() {
 		if (Solar_Status != 1) {
 			Solar_Status = 1;
 			delay(5); // make sure house power is cut.
-			Serial.println("Enabling solar");
 			digitalWrite(SOLAR_OUT, HIGH);
 		}
 	}
 	
 	// put to sleep, to be woken up by PIT
-	Serial.println("Going to sleep");
-	// sleep_cpu();
-	delay(6000);
+	sleep_cpu();
 }
