@@ -37,7 +37,7 @@ void setup() {
 	analogReference(INTERNAL1V1);
 	
 	// revert ADC prescaler to board default (from arduino default)
-	ADC0_CTRLC = (~ADC_PRESC_gm & ADC0_CTRLC) | ADC_PRESC_DIV2_gc;
+	ADC0_CTRLC = (~ADC_PRESC_gm & ADC0_CTRLC) | ADC_PRESC_DIV16_gc;
 	
 	pinMode(SOLAR_IN, INPUT);
 	pinMode(SOLAR_OUT, OUTPUT);
@@ -67,26 +67,41 @@ int readTemp() {
 	// select ADC temp sensor channel by configuring MUXPOS
 	ADC0_MUXPOS = ADC_MUXPOS_TEMPSENSE_gc << ADC_MUXPOS_gp;
 	// In ADC0_CTRLD select INITDLY >= 32 us x CLK_ADC
-	ADC0_CTRLD = (~ADC_INITDLY_gm & ADC0_CTRLD) | ADC_INITDLY_DLY64_gc;
+	ADC0_CTRLD = (~ADC_INITDLY_gm & ADC0_CTRLD) | ADC_INITDLY_DLY128_gc;
 	// set sampling delay to >= 32us (31 in samplen, 10 in sampdly)
-	ADC0_SAMPCTRL = (~ADC_SAMPLEN_gm & ADC0_SAMPCTRL) | (31 << ADC_SAMPLEN_gp);
-	ADC0_CTRLD = (~ADC_SAMPDLY_gm & ADC0_CTRLD) | (10 << ADC_SAMPDLY_gp);
+	ADC0_SAMPCTRL = (~ADC_SAMPLEN_gm & ADC0_SAMPCTRL) | (30 << ADC_SAMPLEN_gp);
+	ADC0_CTRLD = (~ADC_SAMPDLY_gm & ADC0_CTRLD) | (0 << ADC_SAMPDLY_gp);
 	
 	// in CTRLD set SAMPCAP to 1
 	ADC0_CTRLD = (~ADC_SAMPCAP_bm & ADC0_CTRLD) | (1 << ADC_SAMPCAP_bp);
 	// start a conversion to get the temperature
 	ADC0_CTRLA |= 1 << ADC_ENABLE_bp;
 	
+	ADC0_CTRLA &= ~ADC_FREERUN_bm;
+	
+	ADC0_CTRLB = (~ADC_SAMPNUM_gm & ADC0_CTRLB) | (ADC_SAMPNUM_ACC1_gc << ADC_SAMPNUM_gp);
+	
 	// this could really just be ADC0_COMMAND |= 1, but this is more portable, probably.
 	ADC0_COMMAND = (~ADC_STCONV_bm & ADC0_COMMAND) | (1 << ADC_STCONV_bp);
+	int t = (ADC0_COMMAND & ADC_STCONV_bm);
+	
+	Serial.println(t);
 	
 	delay(1); // let everything sync up.
 	
-	uint32_t adc_reading = 0x03ff & ADC0_RES;
+	t = (ADC0_COMMAND & ADC_STCONV_bm);
+	Serial.println(t);
+	
+	uint32_t adc_reading = 0x03ff & ((ADC0_RESH << 8) | ADC0_RESL);
+	
+	Serial.println(adc_reading);
 	
 	// adjust for variance in devices (hardcoded into sigrow)
 	adc_reading -= SIGROW_TEMPSENSE1;
 	adc_reading *= SIGROW_TEMPSENSE0;
+	
+	Serial.print("adc value: ");
+	Serial.println(adc_reading);
 	
 	// now holding 256 * temperature in kelvin.
 	adc_reading -= (273.15 * (1 << 8));
@@ -101,6 +116,7 @@ void loop() {
 	Serial.println("Read temperature");
 	int temp = readTemp();
 	Serial.println(temp);
+	Serial.println(temp > TOO_HOT);
 	
 	if (temp >= TOO_HOT) {
 		// check if solar is providing enough voltage,
@@ -195,5 +211,6 @@ void loop() {
 	
 	// put to sleep, to be woken up by PIT
 	Serial.println("Going to sleep");
-	sleep_cpu();
+	// sleep_cpu();
+	delay(6000);
 }
