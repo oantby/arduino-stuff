@@ -98,7 +98,9 @@ int readTemp() {
 }
 
 void loop() {
+	Serial.println("Read temperature");
 	int temp = readTemp();
+	Serial.println(temp);
 	
 	if (temp >= TOO_HOT) {
 		// check if solar is providing enough voltage,
