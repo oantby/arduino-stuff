@@ -6,7 +6,7 @@
 
 // celsius
 // supplementary power enabled (when appropriate) if over
-#define TOO_HOT 43
+#define TOO_HOT 40
 // both power sources disabled if under
 #define TOO_COLD 20
 
