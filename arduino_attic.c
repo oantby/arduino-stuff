@@ -104,12 +104,21 @@ int readTemp() {
 void loop() {
 	int temp = readTemp();
 	
-	int i = 0;
-	for (; i < (int)(temp - 25); i++) {
+	int i;
+	// 1/2 second flashes. one for mid, 2 for high, 3 for cold
+	for (i = 0; i < (Mid_Stat == 1 ? 1 : (Hot_Stat == 1 ? 2 : 3)); i++) {
 		digitalWrite(13, HIGH);
 		delay(500);
 		digitalWrite(13, LOW);
 		delay(250);
+	}
+	
+	// 1/8 second flashes. one for solar on, 2 for house on, 3 for neither.
+	for (i = 0; i < (Solar_Status == 1 ? 1 : (House_Status == 1 ? 2 : 3)); i++) {
+		digitalWrite(13, HIGH);
+		delay(125);
+		digitalWrite(13, LOW);
+		delay(125);
 	}
 	
 	if (temp >= TOO_HOT) {
