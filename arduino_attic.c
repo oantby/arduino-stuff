@@ -13,7 +13,7 @@
 // minimum reading back from solar pin to indicate it supplies enough power.
 #define SOLAR_THRESHOLD 809
 
-uint_fast8_t Solar_Status, House_Status;
+uint_fast8_t Solar_Status, House_Status, Hot_Stat, Mid_Stat, Cold_Stat;
 
 void setInterrupt() {
 	// wait for startup to be done with PIT
@@ -46,6 +46,9 @@ void setup() {
 	digitalWrite(SOLAR_OUT, LOW);
 	Solar_Status = 1;
 	House_Status = 0;
+	Mid_Stat = 1;
+	Hot_Stat = 0;
+	Cold_Stat = 0;
 	delay(5);
 	digitalWrite(SOLAR_OUT, HIGH);
 	
@@ -110,86 +113,130 @@ void loop() {
 	}
 	
 	if (temp >= TOO_HOT) {
-		// check if solar is providing enough voltage,
-		// and enable house power if it's not.
-		int solar_power = analogRead(SOLAR_IN);
-		if (solar_power < SOLAR_THRESHOLD) {
-			// we need house power. but, to make sure it's not just
-			// a cloud or something, we'll make a couple attempts.
-			
-			if (Solar_Status & 0x80) {
-				// swap to solar was in progress. mark it as too inconsistent.
-				Solar_Status = 0;
-			}
-			
-			if (House_Status & 0x80) {
-				// we've already established on a previous loop the need to
-				// switch to house power. if we've agreed 3 times, make the swap.
-				if (House_Status & 0x03 == 3) {
-					House_Status = 1;
-					
+		if (Mid_Stat & 0x80) Mid_Stat = 0;
+		if (Cold_Stat & 0x80) Cold_Stat = 0;
+		
+		if (Hot_Stat == 1) {
+			// check if solar is providing enough voltage,
+			// and enable house power if it's not.
+			int solar_power = analogRead(SOLAR_IN);
+			if (solar_power < SOLAR_THRESHOLD) {
+				// we need house power. but, to make sure it's not just
+				// a cloud or something, we'll make a couple attempts.
+				
+				if (Solar_Status & 0x80) {
+					// swap to solar was in progress. mark it as too inconsistent.
 					Solar_Status = 0;
-					digitalWrite(SOLAR_OUT, LOW);
-					delay(5); // give plenty of time for switch-off.
-					digitalWrite(HOUSE_OUT, HIGH);
-				} else {
-					++House_Status;
 				}
-			} else if (House_Status == 1) {
-				// house is already supplying power.
-			} else {
-				// house has not considered supplying power yet.
-				House_Status = 0x81;
-			}
-		} else if (House_Status) {
-			// solar is giving plenty.
-			// ensure it's enabled and house is disabled, if solar has proven
-			// consistent.
-			
-			if (House_Status & 0x80) {
-				// were considering swapping to house power, but we're
-				// still good over here.
-				House_Status = 0;
-			}
-			
-			if (Solar_Status & 0x80) {
-				if (Solar_Status & 0x03 == 3) {
-					
-					Solar_Status = 1;
+				
+				if (House_Status & 0x80) {
+					// we've already established on a previous loop the need to
+					// switch to house power. if we've agreed 3 times, make the swap.
+					if ((House_Status & 0x03) == 3) {
+						House_Status = 1;
+						
+						Solar_Status = 0;
+						digitalWrite(SOLAR_OUT, LOW);
+						delay(5); // give plenty of time for switch-off.
+						digitalWrite(HOUSE_OUT, HIGH);
+					} else {
+						++House_Status;
+					}
+				} else if (House_Status == 1) {
+					// house is already supplying power.
+				} else {
+					// house has not considered supplying power yet.
+					House_Status = 0x81;
+				}
+			} else if (House_Status) {
+				// solar is giving plenty.
+				// ensure it's enabled and house is disabled, if solar has proven
+				// consistent.
+				
+				
+				if (House_Status & 0x80) {
+					// were considering swapping to house power, but we're
+					// still good over here.
 					House_Status = 0;
-					digitalWrite(HOUSE_OUT, LOW);
-					delay(5);
-					digitalWrite(SOLAR_OUT, HIGH);
-				} else {
-					++Solar_Status;
 				}
-			} else if (Solar_Status == 1) {
-				// solar is already power supply.
-			} else {
-				// solar hasn't considered supplying.
-				Solar_Status = 0x81;
+				
+				if (Solar_Status & 0x80) {
+					if ((Solar_Status & 0x03) == 3) {
+						
+						Solar_Status = 1;
+						House_Status = 0;
+						digitalWrite(HOUSE_OUT, LOW);
+						delay(5);
+						digitalWrite(SOLAR_OUT, HIGH);
+					} else {
+						++Solar_Status;
+					}
+				} else if (Solar_Status == 1) {
+					// solar is already power supply.
+				} else {
+					// solar hasn't considered supplying.
+					Solar_Status = 0x81;
+				}
 			}
+		} else if (Hot_Stat & 0x80) {
+			if ((Hot_Stat & 0x03) == 3) {
+				Hot_Stat = 1;
+				Mid_Stat = Cold_Stat = 0;
+			} else {
+				++Hot_Stat;
+			}
+		} else {
+			Hot_Stat = 0x81;
 		}
 		
 	} else if (temp <= TOO_COLD) {
-		// turn off everything.
-		if (Solar_Status || House_Status) {
-			digitalWrite(SOLAR_OUT, LOW);
-			digitalWrite(HOUSE_OUT, LOW);
-			Solar_Status = House_Status = 0;
+		if (Hot_Stat & 0x80) Hot_Stat = 0;
+		if (Mid_Stat & 0x80) Mid_Stat = 0;
+		
+		if (Cold_Stat == 1) {
+			// turn off everything.
+			if (Solar_Status || House_Status) {
+				digitalWrite(SOLAR_OUT, LOW);
+				digitalWrite(HOUSE_OUT, LOW);
+				Solar_Status = House_Status = 0;
+			}
+		} else if (Cold_Stat & 0x80) {
+			if ((Cold_Stat & 0x03) == 3) {
+				Cold_Stat = 1;
+				Hot_Stat = Mid_Stat = 0;
+			} else {
+				++Cold_Stat;
+			}
+		} else {
+			Cold_Stat = 0x81;
 		}
 	} else {
-		// house power off, let solar power do whatever it wants.
-		if (House_Status == 1) {
-			// house power was on. need to turn it off.
-			digitalWrite(HOUSE_OUT, LOW);
-		}
-		if (House_Status) House_Status = 0;
+		// same threshold rules as everywhere else. 4 tries before we kill it.
+		if (Hot_Stat & 0x80) Hot_Stat = 0;
+		if (Cold_Stat & 0x80) Cold_Stat = 0;
 		
-		if (Solar_Status != 1) {
-			Solar_Status = 1;
-			delay(5); // make sure house power is cut.
-			digitalWrite(SOLAR_OUT, HIGH);
+		if (Mid_Stat == 1) {
+			// house power off, let solar power do whatever it wants.
+			if (House_Status == 1) {
+				// house power was on. need to turn it off.
+				digitalWrite(HOUSE_OUT, LOW);
+			}
+			if (House_Status) House_Status = 0;
+			
+			if (Solar_Status != 1) {
+				Solar_Status = 1;
+				delay(5); // make sure house power is cut.
+				digitalWrite(SOLAR_OUT, HIGH);
+			}
+		} else if (Mid_Stat & 0x80) {
+			if ((Mid_Stat & 0x03) == 3) {
+				Mid_Stat = 1;
+				Cold_Stat = Hot_Stat = 0;
+			} else {
+				++Mid_Stat;
+			}
+		} else {
+			Mid_Stat = 0x81;
 		}
 	}
 	
