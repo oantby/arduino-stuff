@@ -4,7 +4,8 @@
 // defines SSID + PASS + GARAGE_IP + LOG_ENABLE
 #include "secrets.h"
 
-#define GARAGE_PIN 5
+#define STATUS_PIN 5
+#define ACTION_PIN 8
 
 // multicast address/port where we send logs when enabled
 #define LOG_DEST {239, 255, 17, 73}, 1234
@@ -23,35 +24,59 @@ struct Route {
 	int (*func)(WiFiClient *);
 };
 
+unsigned long LastToggle = 0;
+
 int garageStat(WiFiClient *client);
 int openGarage(WiFiClient *client);
 int closeGarage(WiFiClient *client);
-int toggleGarage(WiFiClient *client);
+int toggleGarage(WiFiClient *client, bool force = false);
+int toggleForce(WiFiClient *client);
 
 struct Route Routes[] = {
 	{"/status", garageStat},
 	{"/open", openGarage},
 	{"/close", closeGarage},
-	{"/toggle", toggleGarage}
+	{"/toggle", toggleForce}
 };
 
+// 0 - closed. 1 - open.
 int garageStat(WiFiClient *client) {
-	
-	return random(2);
+	return digitalRead(STATUS_PIN) == HIGH;
 }
 
 int openGarage(WiFiClient *client) {
-	
+	if (!garageStat(client)) {
+		strcpy(MsgOut, "Garage Opening");
+		return toggleGarage(client);
+	}
+	strcpy(MsgOut, "Garage Already Open");
 	return 0;
 }
 
 int closeGarage(WiFiClient *client) {
-	
+	if (garageStat(client)) {
+		strcpy(MsgOut, "Garage Closing");
+		return toggleGarage(client);
+	}
+	strcpy(MsgOut, "Garage Already Closed");
 	return 0;
 }
 
-int toggleGarage(WiFiClient *client) {
+int toggleForce(WiFiClient *client) {
+	return toggleGarage(client, true);
+}
+
+int toggleGarage(WiFiClient *client, bool force) {
+	if (!force && millis() < LastToggle + 10000) {
+		strcpy(MsgOut, "Garage Move in cooldown");
+		return 0;
+	}
 	
+	strcpy(MsgOut, (garageStat(client) ? "Closing garage" : "Opening Garage"));
+	digitalWrite(ACTION_PIN, HIGH);
+	delay(250);
+	digitalWrite(ACTION_PIN, LOW);
+	LastToggle = millis();
 	return 0;
 }
 
@@ -79,7 +104,8 @@ void setup() {
 	
 	server.begin();
 	
-	pinMode(GARAGE_PIN, INPUT_PULLUP);
+	pinMode(STATUS_PIN, INPUT_PULLUP);
+	pinMode(ACTION_PIN, OUTPUT);
 	
 	// seed with noise, as long as A0 isn't connected to anything.
 	randomSeed(analogRead(0));
