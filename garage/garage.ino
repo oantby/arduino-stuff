@@ -13,23 +13,25 @@ uint_fast8_t ErrCount;
 
 void setup() {
 	
-	Serial.begin(9600);
-	Serial.println("Trying connect");
-	
 	WiFi.setHostname("garaguino");
 	WiFi.config({192,168,1,206});
 	
 	while (WiFi.begin(SSID, PASS) != WL_CONNECTED) {
+		digitalWrite(13, HIGH);
 		delay(1000);
+		digitalWrite(13, LOW);
 	}
 	
 	WiFi.lowPowerMode();
 	
 	NextWiFiCheck = millis() + 10000;
 	
-	Serial.println(WiFi.localIP());
 	
 	server.begin();
+	
+	pinMode(GARAGE_PIN, INPUT_PULLUP);
+	
+	srand(millis());
 }
 
 void (*SystemReset)() = 0;
@@ -37,6 +39,7 @@ void (*SystemReset)() = 0;
 void loop() {
 	char buf[2048];
 	int r;
+	const char *p;
 	
 	WiFiClient client = server.available();
 	
@@ -44,12 +47,17 @@ void loop() {
 		
 		r = client.read((uint8_t *)buf, sizeof(buf));
 		
-		Serial.write(buf, r);
-		Serial.println("");
-		
 		memset(buf, 0, sizeof(buf));
 		
-		strcpy(buf, "HTTP/1.1 200 OK\r\nContent-Length: 3\r\nConnection: close\r\nContent-Type: text/plain\r\n\r\nOk\n");
+		p = (rand() % 2) ? /* digitalRead(GARAGE_PIN) ? */ "Switch is open" : "Switch is closed";
+		
+		r = snprintf(buf, sizeof(buf),
+			"HTTP/1.1 200 OK\r\n"
+			"Content-Type: text/plain\r\n"
+			"Server: Garaguino\r\n"
+			"Content-Length: %d\r\n\r\n"
+			"%s\r\n",
+			strlen(p) + 2, p);
 		client.write((uint8_t *)buf, strlen(buf));
 		
 		client.stop();
@@ -62,8 +70,9 @@ void loop() {
 	} else {
 		if (millis() > NextWiFiCheck) {
 			if (WiFi.status() != WL_CONNECTED) {
-				Serial.println("Wifi connection error");
+				digitalWrite(13, HIGH);
 				delay(100 * (1 << ErrCount));
+				digitalWrite(13, LOW);
 				// exponential backoff, for good measure.
 				if (++ErrCount > 5) {
 					// failed for a good chunk of time. kill switch.
@@ -75,6 +84,6 @@ void loop() {
 				NextWiFiCheck = millis() + 10000;
 			}
 		}
-		delay(100);
+		delay(50);
 	}
 }
