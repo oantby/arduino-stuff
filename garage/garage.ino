@@ -10,6 +10,10 @@
 // multicast address/port where we send logs when enabled
 #define LOG_DEST {239, 255, 17, 73}, 1234
 
+#ifndef DOOR_MOVE_TIME
+#define DOOR_MOVE_TIME 10
+#endif
+
 WiFiServer server(80);
 #ifdef LOG_ENABLE
 WiFiUDP Udp;
@@ -26,53 +30,68 @@ struct Route {
 
 unsigned long LastToggle = 0;
 
+enum GarageState {
+	opened = 1,
+	closed = 2,
+	opening = 3,
+	closing = 4
+};
+
+GarageState CurState;
+
 int garageStat(WiFiClient *client);
 int openGarage(WiFiClient *client);
 int closeGarage(WiFiClient *client);
-int toggleGarage(WiFiClient *client, bool force = false);
-int toggleForce(WiFiClient *client);
+int toggleGarage(WiFiClient *client);
 
 struct Route Routes[] = {
 	{"/status", garageStat},
 	{"/open", openGarage},
 	{"/close", closeGarage},
-	{"/toggle", toggleForce}
+	{"/toggle", toggleGarage}
 };
 
-// 0 - closed. 1 - open.
+const char *curStateString() {
+	switch (CurState) {
+		case opened : return "open";
+		case closed : return "closed";
+		case opening : return "opening";
+		case closing : return "closing";
+	}
+	return "unknown";
+}
+
+// returns CurState - updates it if needed.
 int garageStat(WiFiClient *client) {
-	return digitalRead(STATUS_PIN) == HIGH;
+	if ((CurState == opening || CurState == closing) && millis() < LastToggle + (DOOR_MOVE_TIME * 1000)) {
+		// want to acknowledge "moving" status until we've reached DOOR_MOVE_TIME.
+		return CurState;
+	}
+	return CurState = (digitalRead(STATUS_PIN) == HIGH ? opened : closed);
 }
 
 int openGarage(WiFiClient *client) {
-	if (!garageStat(client)) {
-		strcpy(MsgOut, "Garage Opening");
+	int s = garageStat(client);
+	if (s == closed) {
 		return toggleGarage(client);
 	}
-	strcpy(MsgOut, "Garage Already Open");
+	strcpy(MsgOut, "Garage not closed");
 	return 0;
 }
 
 int closeGarage(WiFiClient *client) {
-	if (garageStat(client)) {
-		strcpy(MsgOut, "Garage Closing");
+	int s = garageStat(client);
+	if (s == opened) {
 		return toggleGarage(client);
 	}
-	strcpy(MsgOut, "Garage Already Closed");
+	strcpy(MsgOut, "Garage not open");
 	return 0;
 }
 
-int toggleForce(WiFiClient *client) {
-	return toggleGarage(client, true);
-}
-
-int toggleGarage(WiFiClient *client, bool force) {
-	if (!force && millis() < LastToggle + 10000) {
-		strcpy(MsgOut, "Garage Move in cooldown");
-		return 0;
-	}
-	
-	strcpy(MsgOut, (garageStat(client) ? "Closing garage" : "Opening Garage"));
+int toggleGarage(WiFiClient *client) {
+	int stat = garageStat(client);
+	strcpy(MsgOut, ((stat == opened || stat == opening) ? "Closing garage" : "Opening Garage"));
+	CurState = (stat == opened || stat == opening) ? closing : opening;
 	digitalWrite(ACTION_PIN, HIGH);
 	delay(250);
 	digitalWrite(ACTION_PIN, LOW);
@@ -109,6 +128,9 @@ void setup() {
 	
 	// seed with noise, as long as A0 isn't connected to anything.
 	randomSeed(analogRead(0));
+	
+	CurState = opened;
+	garageStat(NULL); // will force update CurState.
 }
 
 void (*SystemReset)() = 0;
@@ -189,7 +211,8 @@ void loop() {
 					client.write((uint8_t *)buf, r);
 				} else {
 					// get current status, and spit back response.
-					p = garageStat(&client) ? "open" : "closed";
+					garageStat(&client);
+					p = curStateString();
 					
 					r = sprintf(buf,
 						"HTTP/1.1 200 OK\r\n"
@@ -259,5 +282,12 @@ void loop() {
 			}
 		}
 		delay(50);
+	}
+	
+	// update curState - even if everything SHOULD get a new update when needed.
+	if (CurState == opening || CurState == closing
+		&& millis() > LastToggle + (DOOR_MOVE_TIME * 1000)) {
+		
+		garageStat(NULL);
 	}
 }
