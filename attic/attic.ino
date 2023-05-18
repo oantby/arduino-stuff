@@ -1,19 +1,20 @@
 #include <avr/sleep.h>
 
-#define SOLAR_IN A6
-#define SOLAR_OUT 7
-#define HOUSE_OUT 9
+#define SOLAR_IN A0
+#define SOLAR_OUT 9
+#define HOUSE_OUT 6
 
 // celsius
 // supplementary power enabled (when appropriate) if over
-#define TOO_HOT 40
+#define TOO_HOT 35
 // both power sources disabled if under
-#define TOO_COLD 20
+#define TOO_COLD 15
 
 // minimum reading back from solar pin to indicate it supplies enough power.
-#define SOLAR_THRESHOLD 809
+#define SOLAR_THRESHOLD 400
 
 uint_fast8_t Solar_Status, House_Status, Hot_Stat, Mid_Stat, Cold_Stat;
+int Wakes_Since_House = 0;
 
 void setInterrupt() {
 	// wait for startup to be done with PIT
@@ -102,10 +103,12 @@ int readTemp() {
 }
 
 void loop() {
+	if (Wakes_Since_House < 100) Wakes_Since_House++;
 	int temp = readTemp();
 	
+	int i;
 	// 1/2 second flashes. one for mid, 2 for high, 3 for cold
-	for (int i = 0; i < (Mid_Stat == 1 ? 1 : (Hot_Stat == 1 ? 2 : 3)); i++) {
+	for (i = 0; i < (Mid_Stat == 1 ? 1 : (Hot_Stat == 1 ? 2 : 3)); i++) {
 		digitalWrite(13, HIGH);
 		delay(500);
 		digitalWrite(13, LOW);
@@ -113,7 +116,7 @@ void loop() {
 	}
 	
 	// 1/8 second flashes. one for solar on, 2 for house on, 3 for neither.
-	for (int i = 0; i < (Solar_Status == 1 ? 1 : (House_Status == 1 ? 2 : 3)); i++) {
+	for (i = 0; i < (Solar_Status == 1 ? 1 : (House_Status == 1 ? 2 : 3)); i++) {
 		digitalWrite(13, HIGH);
 		delay(125);
 		digitalWrite(13, LOW);
@@ -141,12 +144,20 @@ void loop() {
 					// we've already established on a previous loop the need to
 					// switch to house power. if we've agreed 3 times, make the swap.
 					if ((House_Status & 0x03) == 3) {
-						House_Status = 1;
-						
-						Solar_Status = 0;
-						digitalWrite(SOLAR_OUT, LOW);
-						delay(5); // give plenty of time for switch-off.
-						digitalWrite(HOUSE_OUT, HIGH);
+						for (int i = 0; i < 10; i++) {
+							digitalWrite(13, HIGH);
+							delay(100);
+							digitalWrite(13, LOW);
+							delay(100);
+						}
+						if (Wakes_Since_House > 18) {
+						  House_Status = 1;
+	
+						  Solar_Status = 0;
+						  digitalWrite(SOLAR_OUT, LOW);
+						  delay(5); // give plenty of time for switch-off.
+						  digitalWrite(HOUSE_OUT, HIGH);
+						}
 					} else {
 						++House_Status;
 					}
@@ -174,6 +185,7 @@ void loop() {
 						Solar_Status = 1;
 						House_Status = 0;
 						digitalWrite(HOUSE_OUT, LOW);
+						Wakes_Since_House = 0;
 						delay(5);
 						digitalWrite(SOLAR_OUT, HIGH);
 					} else {
@@ -181,6 +193,8 @@ void loop() {
 					}
 				} else if (Solar_Status == 1) {
 					// solar is already power supply.
+
+					digitalWrite(SOLAR_OUT, HIGH);
 				} else {
 					// solar hasn't considered supplying.
 					Solar_Status = 0x81;
@@ -206,6 +220,7 @@ void loop() {
 			if (Solar_Status || House_Status) {
 				digitalWrite(SOLAR_OUT, LOW);
 				digitalWrite(HOUSE_OUT, LOW);
+				Wakes_Since_House = 0;
 				Solar_Status = House_Status = 0;
 			}
 		} else if (Cold_Stat & 0x80) {
@@ -228,6 +243,7 @@ void loop() {
 			if (House_Status == 1) {
 				// house power was on. need to turn it off.
 				digitalWrite(HOUSE_OUT, LOW);
+				Wakes_Since_House = 0;
 			}
 			if (House_Status) House_Status = 0;
 			
