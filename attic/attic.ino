@@ -11,7 +11,7 @@
 #define TOO_COLD 15
 
 // minimum reading back from solar pin to indicate it supplies enough power.
-#define SOLAR_THRESHOLD 400
+#define SOLAR_THRESHOLD 600
 
 uint_fast8_t Solar_Status, House_Status, Hot_Stat, Mid_Stat, Cold_Stat;
 int Wakes_Since_House = 0;
@@ -151,12 +151,12 @@ void loop() {
 							delay(100);
 						}
 						if (Wakes_Since_House > 18) {
-						  House_Status = 1;
-	
-						  Solar_Status = 0;
-						  digitalWrite(SOLAR_OUT, LOW);
-						  delay(5); // give plenty of time for switch-off.
-						  digitalWrite(HOUSE_OUT, HIGH);
+							House_Status = 1;
+							
+							Solar_Status = 0;
+							digitalWrite(SOLAR_OUT, LOW);
+							delay(5); // give plenty of time for switch-off.
+							digitalWrite(HOUSE_OUT, HIGH);
 						}
 					} else {
 						++House_Status;
