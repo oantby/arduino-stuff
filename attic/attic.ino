@@ -11,7 +11,9 @@
 #define TOO_COLD 15
 
 // minimum reading back from solar pin to indicate it supplies enough power.
-#define SOLAR_THRESHOLD 600
+#define SOLAR_OFF_THRESHOLD 600
+// minimum reading to switch back from house to solar
+#define SOLAR_ON_THRESHOLD 700
 
 uint_fast8_t Solar_Status, House_Status, Hot_Stat, Mid_Stat, Cold_Stat;
 int Wakes_Since_House = 0;
@@ -131,9 +133,13 @@ void loop() {
 			// check if solar is providing enough voltage,
 			// and enable house power if it's not.
 			int solar_power = analogRead(SOLAR_IN);
-			if (solar_power < SOLAR_THRESHOLD) {
+			if (solar_power < SOLAR_OFF_THRESHOLD
+				|| (House_Status == 1 && solar_power < SOLAR_ON_THRESHOLD)) {
 				// we need house power. but, to make sure it's not just
 				// a cloud or something, we'll make a couple attempts.
+				// SOLAR_ON_THRESHOLD serves as a higher limit to ensure
+				// the slight increase in voltage read after turning off the panel
+				// doesn't result in us flipping back ASAP every time.
 				
 				if (Solar_Status & 0x80) {
 					// swap to solar was in progress. mark it as too inconsistent.
