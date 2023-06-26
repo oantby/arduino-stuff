@@ -13,7 +13,7 @@
 // minimum reading back from solar pin to indicate it supplies enough power.
 #define SOLAR_OFF_THRESHOLD 600
 // minimum reading to switch back from house to solar
-#define SOLAR_ON_THRESHOLD 700
+#define SOLAR_ON_THRESHOLD 800
 
 uint_fast8_t Solar_Status, House_Status, Hot_Stat, Mid_Stat, Cold_Stat;
 int Wakes_Since_House = 0;
